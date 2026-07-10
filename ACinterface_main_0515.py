@@ -170,13 +170,9 @@ def prepare_data_multi(batch, device, config):
         in_S1_td = recursive_todevice(batch['input']['S1 TD'], device)
         if config.batch_size>1: in_S1_td = torch.stack((in_S1_td)).T
         x     = torch.cat((torch.stack(in_S1,dim=1), torch.stack(in_S2,dim=1)),dim=2)
-        # dates = torch.stack((torch.tensor(in_S1_td),torch.tensor(in_S2_td))).float().mean(dim=0).to(device)
-        # print(in_S1_td)
-        # dates = torch.stack((torch.tensor(in_S1_td),torch.tensor(in_S2_td))).float().mean(dim=0).to(device)
         dates = torch.stack((in_S1_td.clone().detach(),in_S2_td.clone().detach())).float().mean(dim=0).to(device)
     else:
         x     = torch.stack(in_S2,dim=1)
-        print(in_S2_td)
         dates = torch.tensor(in_S2_td).float().to(device)
     
     return x, y, in_m, dates
