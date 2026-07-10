@@ -8,8 +8,11 @@ import os, sys
 sys.path.append('/share/hariharan/ck696/allclear/baselines/UnCRtainTS/model/')
 
 from src import losses, model_utils
-from fvcore.nn import FlopCountAnalysis
-from fvcore.nn import flop_count_table
+try:
+    from fvcore.nn import FlopCountAnalysis
+    from fvcore.nn import flop_count_table
+except ImportError:  # fvcore only needed when config.profile is set
+    FlopCountAnalysis = flop_count_table = None
 
 S2_BANDS = 13
 
@@ -67,7 +70,9 @@ class BaseModel(nn.Module):
         # forward through generator, note: for val/test splits, 
         # 'with torch.no_grad():' is declared in train script
         self.fake_B = self.netG(self.real_A, batch_positions=self.dates)
-        if self.config.profile: 
+        if self.config.profile:
+            if FlopCountAnalysis is None:
+                raise ImportError("config.profile requires fvcore: pip install fvcore")
             flopstats  = FlopCountAnalysis(self.netG, (self.real_A, self.dates))
             # print(flop_count_table(flopstats))
             # TFLOPS: flopstats.total() *1e-12
