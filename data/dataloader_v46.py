@@ -28,7 +28,7 @@ class CogDataset_v46(Dataset):
         self.load_spatio_temporal_info()
 
     def __len__(self):
-        return 256
+        return len(self.roi_spatio_temporal_info)
     
     def transforms(self, msi):
 
@@ -49,8 +49,8 @@ class CogDataset_v46(Dataset):
     
     def __getitem__(self, idx):
 
-        # randomly select a row in self.roi_spatio_temporal_info
-        row = self.roi_spatio_temporal_info.iloc[random.randint(0, len(self.roi_spatio_temporal_info)-1)]
+        # honor idx so DataLoader shuffle / Subset / deterministic eval work (was: random row, ignored idx)
+        row = self.roi_spatio_temporal_info.iloc[idx]
         roi = row["roi_id"]
         patch_id = row["patch_id"]
         day_counts = row["day_count"]
@@ -91,13 +91,13 @@ class CogDataset_v46(Dataset):
 
         cld_count = msi[15].mean(keepdim=True, dim=[1,2])
         least_cld_day = cld_count.min(0).indices[0,0]
-        cloudy_days = [i for i in range(4) if i != least_cld_day]
+        cloudy_days = [i for i in range(self.num_frames) if i != least_cld_day]
 
         least_cloudy_image = msi[:13,least_cld_day:least_cld_day+1].permute(1,0,2,3)
-        cloudy_mask = msi[16:,cloudy_days].sum(dim=0).permute(0,1,2)
+        cloudy_mask = msi[16:,cloudy_days].sum(dim=0)
         input_images = msi[:15, cloudy_days].permute(1,0,2,3)
         
-        day_counts = torch.Tensor(day_counts[day_random_idx: day_random_idx+self.num_frames-1])
+        day_counts = torch.as_tensor(day_counts[day_random_idx: day_random_idx+self.num_frames-1], dtype=torch.float32)
         
 #         print(input_images.shape)
 #         print(least_cloudy_image.shape)
@@ -123,21 +123,21 @@ class CogDataset_v46(Dataset):
         # return msi, meta_info, day_counts, dates
 
     def load_spatio_temporal_info(self):
-        csv_list = glob.glob("/share/hariharan/cloud_removal/MultiSensor/dataset_temp_preprocessed_v2/spatio_temporal_v46/roi*.csv")
+        csv_list = sorted(self.dataset_path.glob("roi*.csv"))
         self.roi_spatio_temporal_info = []
 
         # check if csv'roi in self.test_rois or self.train_rois
         if self.mode == "test":
-            csv_list = [csv for csv in csv_list if csv.split("/")[-1].split(".")[0] in self.test_rois]
+            csv_list = [csv for csv in csv_list if csv.stem in self.test_rois]
         elif self.mode == "val":
-            csv_list = [csv for csv in csv_list if csv.split("/")[-1].split(".")[0] in self.val_rois]
+            csv_list = [csv for csv in csv_list if csv.stem in self.val_rois]
         elif self.mode == "train":
-            csv_list = [csv for csv in csv_list if csv.split("/")[-1].split(".")[0] in self.train_rois]
+            csv_list = [csv for csv in csv_list if csv.stem in self.train_rois]
 
         for csv_file in csv_list:
             df = pd.read_csv(csv_file)
             if len(self.roi_spatio_temporal_info) == 0:
-                df["day_count"] = df['day_count'].apply(lambda x: torch.Tensor([int(num) for num in re.findall(r'\d+', x)]))
+                df["day_count"] = df['day_count'].apply(lambda x: torch.tensor([int(num) for num in re.findall(r'\d+', x)], dtype=torch.float32))
                 df["dates"] = df['dates'].apply(lambda x: x.replace("[", "").replace("]", "").replace("'", "").replace("\n", "").split())
                 self.roi_spatio_temporal_info = df
             else:
