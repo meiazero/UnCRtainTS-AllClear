@@ -9,7 +9,7 @@ def create_parser(mode='train'):
         "--model",
         default='uncrtaints', # e.g. 'unet', 'utae', 'uncrtaints',
         type=str,
-        help="Type of architecture to use. Can be one of: (utae/unet3d/fpn/convlstm/convgru/uconvlstm/buconvlstm)",
+        help="Type of architecture to use. Can be one of: (unet/utae/uncrtaints)",
     )
     parser.add_argument("--experiment_name", default='my_first_experiment', help="Name of the current experiment",)
 
@@ -92,7 +92,11 @@ def create_parser(mode='train'):
     parser.add_argument("--use_custom", dest="use_custom", action="store_true", help="whether to test on individually specified patches or not")
     parser.add_argument("--load_config", default='', type=str, help="path of conf.json file to load")
     
-    # flags to toggle between AllClear and SEN12MS-CR-TS
-    parser.add_argument("--dataset", dest="dataset", type=str, default="SEN12MSCRTS", choices=["SEN12MSCRTS", "ALLCLEAR"], help="whether to use SAR or not")
+    # flags specific to AllClear
+    parser.add_argument("--allclear_repo", default="", type=str, help="path to the AllClear repo, if `allclear` is not already importable")
+    parser.add_argument("--allclear_root", default="", type=str, help="path to the AllClear data root, i.e. the directory holding the roiXXXX/ trees")
+    parser.add_argument("--allclear_train_split", default="", type=str, help="path to the AllClear train split JSON, e.g. metadata/datasets/train_tx3_s2-s1_10pct.json")
+    parser.add_argument("--allclear_val_split", default="", type=str, help="path to the AllClear val split JSON")
+    parser.add_argument("--allclear_test_split", default="", type=str, help="path to the AllClear test split JSON")
 
     return parser

@@ -10,18 +10,19 @@ from tqdm import tqdm
 from matplotlib import pyplot as plt
 
 
-dirname = os.path.dirname(os.getcwd())
-sys.path.append(os.path.dirname(dirname))
+_REPO_ROOT = os.path.dirname(os.path.abspath(__file__))
+# model/ too: model/src/model_utils.py imports `from src.backbones import ...`
+for _path in (_REPO_ROOT, os.path.join(_REPO_ROOT, "model")):
+    if _path not in sys.path:
+        sys.path.insert(0, _path)
 
 from model.parse_args import create_parser
-# from data.dataLoader import SEN12MSCR, SEN12MSCRTS
-from data.SEN12MSCRTS import SEN12MSCRTS
+from data.allclear_dataset import AllClearReconstruct
 from model.src.model_utils import get_model, save_model, freeze_layers, load_model, load_checkpoint
-from model.src.learning.metrics import img_metrics, avg_img_metrics
+from model.src.learning.metrics import img_metrics, avg_img_metrics, AverageValueMeter
 from model.misc import *
 
 import torch
-import torchnet as tnt
 from torch.utils.tensorboard import SummaryWriter
 
 from model.src import utils, losses
@@ -38,33 +39,15 @@ from model.src.learning.weight_init import weight_init
 
 S2_BANDS = 13
 parser   = create_parser(mode='train')
+# these were assigned onto `config` after parsing, which silently ignored every CLI flag.
+# as defaults they keep the exact same values while letting the command line win.
+parser.set_defaults(
+    lr=0.001,
+    scale_by=10.0,
+    use_sar=True,
+    experiment_name="allclear_v1",
+)
 config   = utils.str2list(parser.parse_known_args()[0], list_args=["encoder_widths", "decoder_widths", "out_conv"])
-
-config.root1 = "/share/hariharan/cloud_removal/SEN12MSCRTS"
-config.root2 = "/share/hariharan/cloud_removal/SEN12MSCRTS"
-config.root3 = "/share/hariharan/cloud_removal/SEN12MSCRTS"
-
-config.model = "uncrtaints"
-config.input_t = 3
-config.region = "all"
-config.epochs = 20
-config.lr = 0.001
-config.batch_size = 4
-config.gamma = 1.0
-config.scale_by = 10.0
-config.trained_checkp = ""
-config.loss = "MGNLL"
-config.covmode = "diag"
-config.var_nonLinearity = "softplus"
-config.display_step = 10
-config.use_sar = True
-config.block_type = "mbconv"
-config.n_head = 16
-config.device = "cuda"
-config.res_dir = "./results"
-config.rdm_seed = 1
-
-config.experiment_name = "allclear_v1"
 
 if config.model in['unet', 'utae']:
     assert len(config.encoder_widths) == len(config.decoder_widths)
@@ -145,42 +128,10 @@ writer = SummaryWriter(os.path.join(os.path.dirname(config.res_dir), "logs", con
 
 
 
-def prepare_data(batch, device, config):
-    if config.pretrain: return prepare_data_mono(batch, device, config)
-    else: return prepare_data_multi(batch, device, config)
-
-def prepare_data_mono(batch, device, config):
-    x = batch['input']['S2'].to(device).unsqueeze(1)
-    if config.use_sar: 
-        x = torch.cat((batch['input']['S1'].to(device).unsqueeze(1), x), dim=2)
-    m = batch['input']['masks'].to(device).unsqueeze(1)
-    y = batch['target']['S2'].to(device).unsqueeze(1)
-    return x, y, m
-
-def prepare_data_multi(batch, device, config):
-    in_S2       = recursive_todevice(batch['input']['S2'], device)
-    in_S2_td    = recursive_todevice(batch['input']['S2 TD'], device)
-    if config.batch_size>1: in_S2_td = torch.stack((in_S2_td)).T
-    in_m        = torch.stack(recursive_todevice(batch['input']['masks'], device)).swapaxes(0,1)
-    target_S2   = recursive_todevice(batch['target']['S2'], device)
-    y           = torch.cat(target_S2,dim=0).unsqueeze(1)
-
-    if config.use_sar: 
-        in_S1 = recursive_todevice(batch['input']['S1'], device)
-        in_S1_td = recursive_todevice(batch['input']['S1 TD'], device)
-        if config.batch_size>1: in_S1_td = torch.stack((in_S1_td)).T
-        x     = torch.cat((torch.stack(in_S1,dim=1), torch.stack(in_S2,dim=1)),dim=2)
-        dates = torch.stack((in_S1_td.clone().detach(),in_S2_td.clone().detach())).float().mean(dim=0).to(device)
-    else:
-        x     = torch.stack(in_S2,dim=1)
-        dates = torch.tensor(in_S2_td).float().to(device)
-    
-    return x, y, in_m, dates
-
 def iterate(model, data_loader, config, writer, mode="train", epoch=None, device=None):
     if len(data_loader) == 0: raise ValueError("Received data loader with zero samples!")
-    # loss meter, needs 1 meter per scalar (see https://tnt.readthedocs.io/en/latest/_modules/torchnet/meter/averagevaluemeter.html);
-    loss_meter = tnt.meter.AverageValueMeter()
+    # loss meter, needs 1 meter per scalar (vendored in src/learning/metrics.py);
+    loss_meter = AverageValueMeter()
     img_meter  = avg_img_metrics()
 
     # collect sample-averaged uncertainties and errors
@@ -190,16 +141,8 @@ def iterate(model, data_loader, config, writer, mode="train", epoch=None, device
     for i, batch in enumerate(tqdm(data_loader)):
         step = (epoch-1)*len(data_loader)+i
 
-        if config.dataset == "ALLCLEAR":
-            x, y, in_m, dates = batch
-            x, y, in_m, dates = x.to(device), y.to(device), in_m.to(device), dates.to(device)
-        elif config.sample_type == 'cloudy_cloudfree':
-            x, y, in_m, dates = prepare_data(batch, device, config)
-        elif config.sample_type == 'pretrain':
-            x, y, in_m = prepare_data(batch, device, config)
-            dates = None
-        else:
-            raise NotImplementedError
+        x, y, in_m, dates = batch
+        x, y, in_m, dates = x.to(device), y.to(device), in_m.to(device), dates.to(device)
         inputs = {'A': x, 'B': y, 'dates': dates, 'masks': in_m}
 
 
@@ -364,31 +307,26 @@ prepare_output(config)
 device = torch.device(config.device)
 
 # define data sets
-if config.pretrain: # pretrain / training on mono-temporal data
-    dt_train    = SEN12MSCR(os.path.expanduser(config.root3), split='train', region=config.region, sample_type=config.sample_type)
-    dt_val      = SEN12MSCR(os.path.expanduser(config.root3), split='val', region=config.region, sample_type=config.sample_type) 
-    dt_test     = SEN12MSCR(os.path.expanduser(config.root3), split='test', region=config.region, sample_type=config.sample_type)
-else:
-    if config.dataset == "SEN12MSCRTS":
-        dt_train    = SEN12MSCRTS(split='train', region=config.region, sample_type=config.sample_type, sampler = 'random' if config.vary_samples else 'fixed', n_input_samples=config.input_t, import_data_path=import_from_path('train', config), min_cov=config.min_cov, max_cov=config.max_cov)
-        dt_val      = SEN12MSCRTS(split='val', region='all', sample_type=config.sample_type , n_input_samples=config.input_t, import_data_path=import_from_path('val', config)) 
-        dt_test     = SEN12MSCRTS(split='test', region='all', sample_type=config.sample_type , n_input_samples=config.input_t, import_data_path=import_from_path('test', config))
-        
-    if config.dataset == "ALLCLEAR":
-        from data.dataloader_v46 import CogDataset_v46
+def _allclear_split(split_json, config):
+    return AllClearReconstruct(
+        split_json=split_json,
+        data_root=config.allclear_root,
+        tx=config.input_t,
+        repo_path=config.allclear_repo,
+    )
 
-        dt_train = CogDataset_v46(max_num_frames=config.input_t, image_size=256, mode="train")
-        # train_dataloader = DataLoader(train_dataset, batch_size=args.train_bs, shuffle=True, num_workers=args.num_workers, pin_memory=True)
-        dt_val = CogDataset_v46(max_num_frames=config.input_t, image_size=256, mode="val")
-        # test_dataloader = DataLoader(test_dataset, batch_size=args.train_bs, shuffle=True, num_workers=args.num_workers, pin_memory=True)
-        dt_test = CogDataset_v46(max_num_frames=config.input_t, image_size=256, mode="test")
-        # test_dataloader = DataLoader(test_dataset, batch_size=args.train_bs, shuffle=True, num_workers=args.num_workers, pin_memory=True)
-
+dt_train = _allclear_split(config.allclear_train_split, config)
+dt_val   = _allclear_split(config.allclear_val_split, config)
+dt_test  = _allclear_split(config.allclear_test_split, config)
 
 # wrap to allow for subsampling, e.g. for test runs etc
-dt_train    = torch.utils.data.Subset(dt_train, range(0, min(config.max_samples_count, len(dt_train), int(len(dt_train)*config.max_samples_frac))))
-dt_val      = torch.utils.data.Subset(dt_val, range(0, min(config.max_samples_count, len(dt_val), int(len(dt_train)*config.max_samples_frac))))
-dt_test     = torch.utils.data.Subset(dt_test, range(0, min(config.max_samples_count, len(dt_test), int(len(dt_train)*config.max_samples_frac))))
+def _subsample(dataset):
+    n = min(config.max_samples_count, len(dataset), int(len(dataset)*config.max_samples_frac))
+    return torch.utils.data.Subset(dataset, range(0, n))
+
+dt_train    = _subsample(dt_train)
+dt_val      = _subsample(dt_val)
+dt_test     = _subsample(dt_test)
 
 # instantiate dataloaders, note: worker_init_fn is needed to get reproducible random samples across runs if vary_samples=True
 train_loader = torch.utils.data.DataLoader(
