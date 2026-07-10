@@ -1,0 +1,27 @@
+[project]
+name = "uncrtaints-allclear"
+version = "0.1.0"
+description = "UnCRtainTS fork adapted to the AllClear dataset (LNLM-v2 baselines)"
+readme = "README.md"
+requires-python = ">=3.12"
+dependencies = [
+  "matplotlib>=3.11.0",
+  "natsort>=8.4",
+  "numpy>=2.5.1",
+  "pandas>=3.0.3",
+  "pillow>=11.0",
+  "rasterio>=1.5.0",
+  "s2cloudless>=1.7",
+  "scipy>=1.18.0",
+  "torch>=2.13.0",
+  "torchnet>=0.0.4",
+  "torchvision",
+  "tqdm>=4.67",
+]
+
+[project.optional-dependencies]
+profile = ["fvcore>=0.1.5"]
+
+# visdom 0.2.4 (via torchnet) imports pkg_resources in setup.py without declaring it
+[tool.uv.extra-build-dependencies]
+visdom = ["setuptools<81"]
