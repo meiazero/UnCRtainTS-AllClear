@@ -17,6 +17,31 @@ class Metric(object):
     def value(self): pass
 
 
+class AverageValueMeter(Metric):
+    """Running mean/std via Welford's algorithm.
+    Replaces torchnet.meter.AverageValueMeter (same add/value API).
+    """
+
+    def __init__(self):
+        self.reset()
+
+    def reset(self):
+        self.n = 0
+        self.mean = 0.0
+        self.m2 = 0.0
+
+    def add(self, value, n=1):
+        for _ in range(n):
+            self.n += 1
+            delta = value - self.mean
+            self.mean += delta / self.n
+            self.m2 += delta * (value - self.mean)
+
+    def value(self):
+        std = (self.m2 / (self.n - 1)) ** 0.5 if self.n > 1 else float('nan')
+        return self.mean, std
+
+
 def img_metrics(target, pred, var=None, pixelwise=True):
     rmse = torch.sqrt(torch.mean(torch.square(target - pred)))
     psnr = 20 * torch.log10(1 / rmse)
