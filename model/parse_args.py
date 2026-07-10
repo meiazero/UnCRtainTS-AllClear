@@ -65,6 +65,7 @@ def create_parser(mode='train'):
 
     # flags specific to SEN12MS-CR and SEN12MS-CR-TS
     parser.add_argument("--use_sar", dest="use_sar", action="store_true", help="whether to use SAR or not")
+    parser.add_argument("--no_use_sar", dest="use_sar", action="store_false", help="force S2-only input (13 channels), e.g. with a make_s2_only.py split")
     parser.add_argument("--pretrain", dest="pretrain", action="store_true", help="whether to perform pretraining on SEN12MS-CR or training on SEN12MS-CR-TS") 
     parser.add_argument("--input_t", default=3, type=int, help="number of input time points to sample, unet3d needs at least 4 time points")
     parser.add_argument("--ref_date", default="2014-04-03", type=str, help="reference date for Sentinel observations")

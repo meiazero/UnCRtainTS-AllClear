@@ -41,22 +41,28 @@ Splits live in `metadata/datasets/`. UnCRtainTS uses `input_t=3` time steps with
 | val   | `val_tx3_s2-s1-landsat_100pct.json` | 14212 | 62.8% |
 | test  | `test_tx3_s2-s1_100pct.json` | 55317 | 59.5% |
 
-Take the `_s2-s1_` splits, **not** the `_s2_` ones. `_s2_` means "100% of the S2 sequences", not
-"S2 only": those files cover the very same samples but with an empty `s1` list, and `AllClearDataset`
-fills missing auxiliary sensors with a constant-1.0 placeholder. Training on real SAR and evaluating
-against a fabricated one produces no error, only wrong numbers. `data/allclear_dataset.py` rejects a
-split with zero SAR coverage for this reason.
+There is no `val_tx3_s2-s1_100pct.json`; the landsat variant is the tx3 val split, and its landsat
+entries are simply never read.
 
-The remaining ~40% of samples have no temporally aligned SAR and get the same placeholder. That is
-native AllClear behavior, identical to the official inference wrapper.
+For an **S2-only** run, pass `--no_use_sar` and use the `_s2_` splits that AllClear's
+`make_s2_only.py` derives from the ones above. Those files hold the very same samples with every
+non-S2 modality emptied; `AllClearDataset` treats an empty modality like an absent one. Do not mix
+the two: with `--use_sar` a `_s2_` split would feed the 2 SAR channels a constant-1.0 placeholder —
+wrong numbers, no error — so the loader rejects that combination up front.
 
-There is no `val_tx3_s2-s1_100pct.json`; the landsat variant is the tx3 val split. That is fine —
-the adapter requests only `s2_toa` and `s1`, so the landsat entries are never read.
+Even in the `_s2-s1_` splits, ~40% of samples have no temporally aligned SAR and get the same
+placeholder. That is native AllClear behavior.
 
-`data/allclear_dataset.py` wraps `allclear.dataset.AllClearDataset` and emits the
-`(input, target, masks, dates)` tuple the training loop expects. The tensor mapping mirrors the
-official inference wrapper (`allclear/baseline_wrappers.py::UnCRtainTS`), so training and the
-AllClear benchmark feed the network identically.
+`data/allclear_dataset.py` wraps `allclear.dataset.AllClearDataset` and standardizes each item into
+the batch the model consumes: `A [T,C,H,W]`, `B [1,13,H,W]`, `masks [T,H,W]` (cloud ∪ shadow per
+input frame), `dates [T]` (signed day-offset to the target), plus `target_valid_mask` and
+`sample_id`. Downstream experiments import `make_dataset` from here rather than reimplementing it,
+so every run feeds the network identically.
+
+It also guards two ways AllClear can mis-supervise silently: a split whose time-step count does not
+match `--input_t` (which would raise deep inside `__getitem__`), and a split whose `s2_toa` frames
+are not ascending by timestamp — `AllClearDataset` sorts the images but stacks the cloud/shadow
+masks in raw JSON order, so mask frame *k* would belong to a different date than image frame *k*.
 
 ## Training
 

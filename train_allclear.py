@@ -17,7 +17,7 @@ for _path in (_REPO_ROOT, os.path.join(_REPO_ROOT, "model")):
         sys.path.insert(0, _path)
 
 from model.parse_args import create_parser
-from data.allclear_dataset import AllClearReconstruct
+from data.allclear_dataset import make_dataset
 from model.src.model_utils import get_model, save_model, freeze_layers, load_model, load_checkpoint
 from model.src.learning.metrics import img_metrics, avg_img_metrics, AverageValueMeter
 from model.misc import *
@@ -141,8 +141,7 @@ def iterate(model, data_loader, config, writer, mode="train", epoch=None, device
     for i, batch in enumerate(tqdm(data_loader)):
         step = (epoch-1)*len(data_loader)+i
 
-        x, y, in_m, dates = batch
-        x, y, in_m, dates = x.to(device), y.to(device), in_m.to(device), dates.to(device)
+        x, y, in_m, dates = (batch[k].to(device) for k in ('A', 'B', 'masks', 'dates'))
         inputs = {'A': x, 'B': y, 'dates': dates, 'masks': in_m}
 
 
@@ -308,11 +307,12 @@ device = torch.device(config.device)
 
 # define data sets
 def _allclear_split(split_json, config):
-    return AllClearReconstruct(
+    return make_dataset(
         split_json=split_json,
         data_root=config.allclear_root,
         tx=config.input_t,
-        repo_path=config.allclear_repo,
+        use_sar=config.use_sar,
+        dataset_repo=config.allclear_repo,
     )
 
 dt_train = _allclear_split(config.allclear_train_split, config)
