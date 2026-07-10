@@ -1,12 +1,6 @@
 import torch
 import torch.nn as nn
 
-# import os
-# sub_dir = os.path.join(os.getcwd(), 'model')
-# if os.path.isdir(sub_dir): os.chdir(sub_dir)
-import os, sys
-sys.path.append('/share/hariharan/ck696/allclear/baselines/UnCRtainTS/model/')
-
 from src import losses, model_utils
 try:
     from fvcore.nn import FlopCountAnalysis

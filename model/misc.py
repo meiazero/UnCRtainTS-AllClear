@@ -1,12 +1,6 @@
 import os
-import sys
-import time
 import json
-import random
-import pprint
-import argparse
 import numpy as np
-from tqdm import tqdm
 from matplotlib import pyplot as plt
 import torch
 
@@ -133,6 +127,7 @@ def discrete_matshow(data, n_colors=5, min=0, max=1):
     fig.tight_layout()
     return fig
 
+
 def continuous_matshow(data, min=0, max=1):
     fig, ax = plt.subplots()
     # get discrete colormap
@@ -228,15 +223,6 @@ def compute_uce_auce(var, errors, n_samples, percent=5, l2=True, mode='val', ste
     return uce, auce
 
 
-def recursive_todevice(x, device):
-    if isinstance(x, torch.Tensor):
-        return x.to(device)
-    elif isinstance(x, dict):
-        return {k: recursive_todevice(v, device) for k, v in x.items()}
-    else:
-        return [recursive_todevice(c, device) for c in x]
-
-
 def prepare_output(config):
     os.makedirs(os.path.join(config.res_dir, config.experiment_name), exist_ok=True)
 
@@ -251,14 +237,3 @@ def save_results(metrics, path, split='test'):
         os.path.join(path, f"{split}_metrics.json"), "w"
     ) as outfile:
         json.dump(metrics, outfile, indent=4)
-
-
-# check for file of pre-computed statistics, e.g. indices or cloud coverage
-def import_from_path(split, config):
-    if os.path.exists(os.path.join(os.path.dirname(os.getcwd()), 'util', 'precomputed')):
-        import_path = os.path.join(os.path.dirname(os.getcwd()), 'util', 'precomputed', f'generic_{config.input_t}_{split}_{config.region}_s2cloudless_mask.npy')
-    else:
-        import_path = os.path.join(config.precomputed, f'generic_{config.input_t}_{split}_{config.region}_s2cloudless_mask.npy')
-    import_data_path = import_path if os.path.isfile(import_path) else None
-    return import_data_path
-    

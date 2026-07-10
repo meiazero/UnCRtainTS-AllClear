@@ -1,14 +1,6 @@
 import os
 import torch
 
-sub_dir = os.path.join(os.getcwd(), 'model/src')
-if os.path.isdir(sub_dir): os.chdir(sub_dir)
-
-# import sys
-# import os
-# sys.path.append(os.path.abspath(os.path.join(os.getcwd(), 'model/src')))
-import os, sys
-sys.path.append('/share/hariharan/ck696/allclear/baselines/UnCRtainTS/model')
 from src.backbones import base_model, utae, uncrtaints
 
 S1_BANDS = 2
