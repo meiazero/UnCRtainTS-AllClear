@@ -56,15 +56,30 @@ class AllClearReconstruct(Dataset):
         with open(split_json) as f:
             dataset = json.load(f)
 
+        name = os.path.basename(split_json)
+
         # AllClearDataset sizes its tensor at tx rows but writes one row per s2_toa
         # timestamp, so a tx12 split under --input_t 3 dies with IndexError on the
         # first __getitem__. Fail here instead, with the split named.
         steps = {len(sample["s2_toa"]) for sample in dataset.values()}
         if steps != {tx}:
             raise ValueError(
-                f"{os.path.basename(split_json)} has {sorted(steps)} s2_toa time steps "
-                f"but --input_t is {tx}. Use a tx{tx} split, or set --input_t accordingly."
+                f"{name} has {sorted(steps)} s2_toa time steps but --input_t is {tx}. "
+                f"Use a tx{tx} split, or set --input_t accordingly."
             )
+
+        # Missing SAR is not an error to AllClearDataset: it leaves those channels at
+        # the torch.ones placeholder. The `_s2_` splits carry an s1 key that is empty
+        # for every sample, so the model would silently see constant-1.0 SAR. That is
+        # a wrong number, not a crash, so refuse it here.
+        with_sar = sum(1 for sample in dataset.values() if sample.get("s1"))
+        if not with_sar:
+            raise ValueError(
+                f"{name} has no SAR observations at all; UnCRtainTS reads 13 S2 + 2 SAR "
+                f"channels, so all {len(dataset)} samples would carry a constant-1.0 "
+                f"placeholder. Use the matching `_s2-s1_` split instead."
+            )
+        print(f"{name}: {len(dataset)} samples, {100*with_sar/len(dataset):.1f}% with real SAR")
 
         self.dataset = allclear_dataset(
             dataset=dataset,

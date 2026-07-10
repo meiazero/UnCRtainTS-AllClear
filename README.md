@@ -35,14 +35,23 @@ python download.py --from-json metadata/datasets/train_tx3_s2-s1_10pct.json --dr
 Splits live in `metadata/datasets/`. UnCRtainTS uses `input_t=3` time steps with S2 + S1
 (13 + 2 = 15 input channels), so the matching splits are the `tx3_s2-s1` family:
 
-| Split | File |
-|---|---|
-| train | `train_tx3_s2-s1_10pct.json` (also `_1pct`, `_3.4pct`, `_100pct`) |
-| val   | `val_tx3_s2-s1-landsat_100pct.json` |
-| test  | `test_tx3_s2-s1_100pct.json` |
+| Split | File | Samples | With real SAR |
+|---|---|---|---|
+| train | `train_tx3_s2-s1_10pct.json` (also `_1pct`, `_3.4pct`, `_100pct`) | 27861 | 60.5% |
+| val   | `val_tx3_s2-s1-landsat_100pct.json` | 14212 | 62.8% |
+| test  | `test_tx3_s2-s1_100pct.json` | 55317 | 59.5% |
+
+Take the `_s2-s1_` splits, **not** the `_s2_` ones. `_s2_` means "100% of the S2 sequences", not
+"S2 only": those files cover the very same samples but with an empty `s1` list, and `AllClearDataset`
+fills missing auxiliary sensors with a constant-1.0 placeholder. Training on real SAR and evaluating
+against a fabricated one produces no error, only wrong numbers. `data/allclear_dataset.py` rejects a
+split with zero SAR coverage for this reason.
+
+The remaining ~40% of samples have no temporally aligned SAR and get the same placeholder. That is
+native AllClear behavior, identical to the official inference wrapper.
 
 There is no `val_tx3_s2-s1_100pct.json`; the landsat variant is the tx3 val split. That is fine —
-`data/allclear_dataset.py` requests only `s2_toa` and `s1`, so the landsat entries are never read.
+the adapter requests only `s2_toa` and `s1`, so the landsat entries are never read.
 
 `data/allclear_dataset.py` wraps `allclear.dataset.AllClearDataset` and emits the
 `(input, target, masks, dates)` tuple the training loop expects. The tensor mapping mirrors the
@@ -67,7 +76,7 @@ puts `allclear/dataset.py` on the import path without pulling in the rest of the
 
 Every flag not passed keeps the default UnCRtainTS-on-AllClear setting (`--lr 0.001`,
 `--scale_by 10.0`, `--use_sar`, `--loss MGNLL`, `--covmode diag`, `--batch_size 4`, `--epochs 20`).
-See `model/parse_args.py` for the full list. `z_unc.sh` is a SLURM wrapper around the same command.
+See `model/parse_args.py` for the full list.
 
 Results, checkpoints and `conf.json` land under `--res_dir` (default `./results`). The `conf.json` is
 what the official AllClear benchmark reads back to reconstruct the model, so keep it with the weights.
