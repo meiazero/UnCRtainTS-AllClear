@@ -55,6 +55,17 @@ class AllClearReconstruct(Dataset):
         allclear_dataset = _allclear_dataset_cls(repo_path)
         with open(split_json) as f:
             dataset = json.load(f)
+
+        # AllClearDataset sizes its tensor at tx rows but writes one row per s2_toa
+        # timestamp, so a tx12 split under --input_t 3 dies with IndexError on the
+        # first __getitem__. Fail here instead, with the split named.
+        steps = {len(sample["s2_toa"]) for sample in dataset.values()}
+        if steps != {tx}:
+            raise ValueError(
+                f"{os.path.basename(split_json)} has {sorted(steps)} s2_toa time steps "
+                f"but --input_t is {tx}. Use a tx{tx} split, or set --input_t accordingly."
+            )
+
         self.dataset = allclear_dataset(
             dataset=dataset,
             selected_rois=selected_rois,
